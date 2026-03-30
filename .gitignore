@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+
+# 虚拟环境
+.venv/
+venv/
+
+# 模型权重文件（太大，用 Git LFS 或网盘单独分发）
+checkpoints/*.pth
+
+# 数据集
+data/
+dataset/
+
+# IDE / 编辑器
+.vscode/
+.idea/
+.codebuddy/
+.trae/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# 环境变量
+.env

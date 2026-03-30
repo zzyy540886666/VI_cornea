@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  # Web 界面服务（Streamlit）
+  web:
+    build: .
+    container_name: corneal-web
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./checkpoints:/app/checkpoints
+      - ./data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8501', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - corneal-network
+
+  # API 服务（FastAPI）
+  api:
+    build: .
+    container_name: corneal-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./checkpoints:/app/checkpoints
+      - ./data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: uvicorn api:app --host 0.0.0.0 --port 8000 --workers 2
+    restart: unless-stopped
+    depends_on:
+      - web
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - corneal-network
+
+networks:
+  corneal-network:
+    driver: bridge

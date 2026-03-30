@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 模型文件（太大，不包含在镜像中）
+checkpoints/*.pth
+checkpoints/*.pt
+
+# 数据
+data/*
+!data/.gitkeep
+dataset/*
+!dataset/.gitkeep
+
+# 日志
+*.log
+logs/
+
+# 临时文件
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# 项目特定
+*.csv
+*.png
+*.jpg
+*.jpeg
+!requirements.txt
+!*.py
+!Dockerfile
+!docker-compose.yml
+!.dockerignore
