@@ -4,9 +4,13 @@
 """
 
 import os
+import time
+import traceback
 
 # Streamlit Cloud 等海外环境直接访问 huggingface.co，国内环境用镜像
-if os.environ.get('HF_ENDPOINT') is None and os.environ.get('STREAMLIT_SHARING_MODE') is None:
+# Streamlit Cloud 会设置 STREAMLIT_SHARING_MODE 或 IS_STREAMLIT_CLOUD
+_cloud_env = os.environ.get('STREAMLIT_SHARING_MODE') or os.environ.get('IS_STREAMLIT_CLOUD')
+if not _cloud_env and os.environ.get('HF_ENDPOINT') is None:
     os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
 
 import torch
@@ -19,7 +23,6 @@ from typing import List, Dict, Union
 import logging
 from datetime import datetime
 import numpy as np
-from huggingface_hub import hf_hub_download
 
 # Hugging Face 模型仓库（用于自动下载）
 HF_REPO_ID = "zzy4088/corneal-model"
@@ -51,6 +54,54 @@ class ModelService:
         if self._model is None:
             self._initialize()
     
+    def _download_from_hf(self, max_retries: int = 3) -> Path:
+        """从 Hugging Face 下载模型，支持重试"""
+        from huggingface_hub import hf_hub_download, HfFileSystem
+        
+        last_error = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info(f"下载尝试 {attempt}/{max_retries}...")
+                
+                # 构建下载参数
+                download_kwargs = {
+                    "repo_id": HF_REPO_ID,
+                    "filename": HF_MODEL_FILE,
+                    "local_dir": "checkpoints",
+                }
+                
+                # 如果设置了 HF_TOKEN（在 Streamlit Cloud Secrets 中配置）
+                hf_token = os.environ.get("HF_TOKEN", os.environ.get("HUGGING_FACE_HUB_TOKEN", ""))
+                if hf_token:
+                    download_kwargs["token"] = hf_token
+                
+                cached_path = hf_hub_download(**download_kwargs)
+                downloaded_path = Path(cached_path)
+                
+                if downloaded_path.exists() and downloaded_path.stat().st_size > 0:
+                    logger.info(f"模型下载成功：{downloaded_path}")
+                    return downloaded_path
+                else:
+                    raise FileNotFoundError(f"下载的文件为空或不存在：{downloaded_path}")
+                    
+            except Exception as e:
+                last_error = e
+                logger.warning(f"下载失败（尝试 {attempt}/{max_retries}）：{e}")
+                if attempt < max_retries:
+                    time.sleep(3 * attempt)  # 递增等待
+        
+        # 所有重试都失败
+        error_detail = str(last_error)
+        logger.error(f"模型下载最终失败：{error_detail}")
+        logger.error(f"堆栈信息：\n{traceback.format_exc()}")
+        raise FileNotFoundError(
+            f"模型下载失败（已重试 {max_retries} 次）：{error_detail}\n"
+            f"请检查：\n"
+            f"  1. Hugging Face 仓库 {HF_REPO_ID} 是否存在且可访问\n"
+            f"  2. 如果是私有仓库，请在 Streamlit Cloud Secrets 中设置 HF_TOKEN\n"
+            f"  3. 网络连接是否正常"
+        )
+    
     def _initialize(self):
         """加载模型和配置"""
         logger.info("正在初始化模型服务...")
@@ -64,20 +115,9 @@ class ModelService:
         if not self._model_path.exists():
             logger.info("本地模型文件不存在，正在从 Hugging Face 下载...")
             self._model_path.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                cached_path = hf_hub_download(
-                    repo_id=HF_REPO_ID,
-                    filename=HF_MODEL_FILE,
-                    local_dir='checkpoints',
-                )
-                self._model_path = Path(cached_path)
-                logger.info(f"模型下载完成：{self._model_path}")
-            except Exception as e:
-                raise FileNotFoundError(
-                    f"模型下载失败：{e}\n"
-                    f"请手动将 {HF_MODEL_FILE} 放入 checkpoints/ 目录，"
-                    f"或检查网络连接"
-                )
+            self._model_path = self._download_from_hf()
+        
+        logger.info(f"模型文件路径：{self._model_path}（大小：{self._model_path.stat().st_size / 1024 / 1024:.1f} MB）")
         
         # 创建模型
         self._model = create_model(
@@ -88,7 +128,12 @@ class ModelService:
         )
         
         # 加载权重
-        checkpoint = torch.load(self._model_path, map_location=self._device)
+        logger.info(f"正在加载模型权重：{self._model_path}")
+        try:
+            checkpoint = torch.load(self._model_path, map_location=self._device, weights_only=False)
+        except TypeError:
+            # PyTorch < 2.0 不支持 weights_only 参数
+            checkpoint = torch.load(self._model_path, map_location=self._device)
         self._model.load_state_dict(checkpoint['model_state_dict'])
         self._model.to(self._device)
         self._model.eval()

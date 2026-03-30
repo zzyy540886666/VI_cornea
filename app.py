@@ -299,12 +299,16 @@ def icon(name, inline=False):
 
 
 # ── 模型加载 ──
+_model_load_error = None
+
 @st.cache_resource
 def load_model():
+    global _model_load_error
     try:
         service = initialize_service()
         return service
     except Exception as e:
+        _model_load_error = str(e)
         return None
 
 
@@ -459,7 +463,15 @@ with st.sidebar:
 #  主内容
 # ══════════════════════════════════════════
 if model_service is None:
-    st.error("模型文件缺失，请确认 `checkpoints/best_model.pth` 存在。")
+    st.error("模型加载失败")
+    if _model_load_error:
+        st.warning(f"错误详情：{_model_load_error}")
+    st.info(
+        "可能的原因：\n"
+        "1. Hugging Face 模型仓库访问失败（网络/权限问题）\n"
+        "2. 如果仓库为 Private，请在 Streamlit Cloud → Settings → Secrets 中添加 `HF_TOKEN`\n"
+        "3. 请确认模型文件 `best_model.pth` 已上传到 Hugging Face 仓库 `zzy4088/corneal-model`"
+    )
     st.stop()
 
 
