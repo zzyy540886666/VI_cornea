@@ -68,7 +68,7 @@ Write-Host "下次使用时，只需运行：" -ForegroundColor Cyan
 Write-Host "  1. .venv\Scripts\Activate.ps1" -ForegroundColor White
 Write-Host "  2. streamlit run app.py" -ForegroundColor White
 Write-Host ""
-Write-Host "或直接运行 .\scripts\start.ps1 启动 Web 界面" -ForegroundColor Cyan
+Write-Host "或直接运行 .\start.ps1 启动 Web 界面" -ForegroundColor Cyan
 Write-Host ""
 
 pause

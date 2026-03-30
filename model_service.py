@@ -4,7 +4,11 @@
 """
 
 import os
-os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
+
+# Streamlit Cloud 等海外环境直接访问 huggingface.co，国内环境用镜像
+if os.environ.get('HF_ENDPOINT') is None and os.environ.get('STREAMLIT_SHARING_MODE') is None:
+    os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
+
 import torch
 import torch.nn as nn
 from torchvision import transforms
@@ -15,6 +19,11 @@ from typing import List, Dict, Union
 import logging
 from datetime import datetime
 import numpy as np
+from huggingface_hub import hf_hub_download
+
+# Hugging Face 模型仓库（用于自动下载）
+HF_REPO_ID = "zzy4088/corneal-model"
+HF_MODEL_FILE = "best_model.pth"
 
 # 配置日志
 logging.basicConfig(
@@ -50,10 +59,25 @@ class ModelService:
         self._device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         logger.info(f"使用设备：{self._device}")
         
-        # 加载模型
+        # 加载模型（本地没有则从 Hugging Face 自动下载）
         self._model_path = Path('checkpoints/best_model.pth')
         if not self._model_path.exists():
-            raise FileNotFoundError(f"模型文件不存在：{self._model_path}")
+            logger.info("本地模型文件不存在，正在从 Hugging Face 下载...")
+            self._model_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                cached_path = hf_hub_download(
+                    repo_id=HF_REPO_ID,
+                    filename=HF_MODEL_FILE,
+                    local_dir='checkpoints',
+                )
+                self._model_path = Path(cached_path)
+                logger.info(f"模型下载完成：{self._model_path}")
+            except Exception as e:
+                raise FileNotFoundError(
+                    f"模型下载失败：{e}\n"
+                    f"请手动将 {HF_MODEL_FILE} 放入 checkpoints/ 目录，"
+                    f"或检查网络连接"
+                )
         
         # 创建模型
         self._model = create_model(
