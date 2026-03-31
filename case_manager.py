@@ -6,6 +6,7 @@
 import sqlite3
 import uuid
 import json
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -13,14 +14,33 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = Path("cases.db")
+
+def _get_default_db_path() -> str:
+    """获取数据库路径，兼容 Streamlit Cloud 只读文件系统"""
+    # Streamlit Cloud 可写目录: /mount/data 或 /tmp
+    candidates = [
+        "/mount/data/cases.db",
+        os.path.join(os.environ.get("HOME", ""), "cases.db"),
+        "/tmp/cases.db",
+        "cases.db",  # 本地开发回退
+    ]
+    for p in candidates:
+        try:
+            Path(p).parent.mkdir(parents=True, exist_ok=True)
+            # 测试是否可写
+            with open(p, 'a') as f:
+                pass
+            return p
+        except (PermissionError, OSError):
+            continue
+    return "cases.db"
 
 
 class CaseManager:
     """病例管理系统"""
 
     def __init__(self, db_path: str = None):
-        self.db_path = db_path or str(DB_PATH)
+        self.db_path = db_path or _get_default_db_path()
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self._create_tables()
