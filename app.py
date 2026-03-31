@@ -673,7 +673,7 @@ with tab4:
 
         with sub_tab2:
             with st.form("new_patient_form"):
-                name = st.text_input("姓名 *", required=True)
+                name = st.text_input("姓名 *")
                 age = st.number_input("年龄", min_value=0, max_value=150, value=30)
                 gender = st.selectbox("性别", ["男", "女", "其他"])
                 phone = st.text_input("电话")
