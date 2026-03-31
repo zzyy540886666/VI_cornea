@@ -1,279 +1,224 @@
 """
-2026 年最新角膜地形图分类模型 - 预测脚本
-功能：加载训练好的模型，对新的角膜地形图进行分类预测
+角膜地形图智能诊断系统 - 预测脚本 (v2.0 增强版)
+支持: 4分类 / 可解释性分析 / 风险评估报告
 """
 
 import os
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
+
 import torch
-import torch.nn as nn
 from torchvision import transforms
 from timm import create_model
 from PIL import Image
 from pathlib import Path
-import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
 import numpy as np
 import argparse
+import json
+from datetime import datetime
+
 
 class CornealPredictor:
-    """角膜地形图预测器"""
-    
+    """角膜地形图预测器 v2.0"""
+
     def __init__(self, model_path='checkpoints/best_model.pth', device=None):
-        """
-        初始化预测器
-        
-        参数:
-            model_path: 模型权重文件路径
-            device: 推理设备
-        """
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
         self.model_path = model_path
-        self.class_names = ['圆锥角膜（异常）', '正常角膜']
-        self.idx_to_class = {0: 'KC', 1: 'Normal'}
-        
-        print(f"🚀 使用设备：{self.device}")
-        
-        # 加载模型
+
+        # 检测类别数
+        self.num_classes = self._detect_classes()
+        if self.num_classes == 4:
+            self.idx_to_class = {0: 'Normal', 1: 'Mild KC', 2: 'Moderate KC', 3: 'Severe KC'}
+            self.class_names_cn = ['正常角膜', '轻度圆锥角膜', '中度圆锥角膜', '重度圆锥角膜']
+        else:
+            self.idx_to_class = {0: 'KC', 1: 'Normal'}
+            self.class_names_cn = ['圆锥角膜（异常）', '正常角膜']
+
+        print(f"设备：{self.device} | 类别数：{self.num_classes}")
         self._load_model()
-        
-        # 数据预处理
+
         self.transform = transforms.Compose([
             transforms.Resize(224),
             transforms.CenterCrop(224),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ])
-    
+
+        # 可解释性
+        self.explainability = None
+        if self.num_classes == 4:
+            try:
+                from explainability import ExplainabilityAnalyzer
+                from risk_assessment import RiskAssessmentReport
+                self.explainability = ExplainabilityAnalyzer(self.model, self.device)
+                self.risk_assessor = RiskAssessmentReport()
+                print("可解释性模块加载成功")
+            except ImportError:
+                print("可解释性模块未安装")
+
+    def _detect_classes(self) -> int:
+        try:
+            checkpoint = torch.load(self.model_path, map_location='cpu', weights_only=False)
+        except TypeError:
+            checkpoint = torch.load(self.model_path, map_location='cpu')
+        state_dict = checkpoint.get('model_state_dict', checkpoint)
+        for key in ['head.fc.weight', 'head.fc.bias', 'classifier.weight', 'classifier.bias',
+                     'head.weight', 'head.bias']:
+            if key in state_dict:
+                return state_dict[key].shape[0]
+        for key, tensor in state_dict.items():
+            if tensor.dim() == 1 and tensor.shape[0] in (2, 4):
+                return tensor.shape[0]
+        return 2
+
     def _load_model(self):
-        """加载训练好的模型"""
-        print(f"📦 加载模型：{self.model_path}")
-        
-        # 创建模型（与训练时相同）
-        self.model = create_model(
-            'convnextv2_base',
-            pretrained=False,
-            num_classes=2,
-            in_chans=3
-        )
-        
-        # 加载权重
+        print(f"加载模型：{self.model_path}")
+        self.model = create_model('convnextv2_base', pretrained=False, num_classes=self.num_classes, in_chans=3)
         checkpoint = torch.load(self.model_path, map_location=self.device)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.model = self.model.to(self.device)
         self.model.eval()
-        
-        print(f"✅ 模型加载成功")
-        print(f"   验证准确率：{checkpoint['val_acc']:.2f}%")
-        print(f"   训练轮次：{checkpoint['epoch']}")
-    
-    def predict(self, image_path):
-        """
-        预测单张图片
-        
-        参数:
-            image_path: 图片路径
-            
-        返回:
-            dict: 包含预测结果、置信度等信息
-        """
+        print(f"模型加载成功 | 验证准确率：{checkpoint['val_acc']:.2f}%")
+
+    def predict(self, image_path, explain=False):
         image_path = Path(image_path)
-        
         if not image_path.exists():
             raise FileNotFoundError(f"图片不存在：{image_path}")
-        
-        # 读取图片
+
         image = Image.open(image_path).convert('RGB')
-        
-        # 预处理
         image_tensor = self.transform(image).unsqueeze(0).to(self.device)
-        
-        # 推理
+
         with torch.no_grad():
             outputs = self.model(image_tensor)
             probabilities = torch.nn.functional.softmax(outputs, dim=1)
             confidence, predicted = torch.max(probabilities, 1)
-        
-        # 结果
-        pred_class = predicted.item()
-        conf_score = confidence.item()
-        
+
+        pred_idx = predicted.item()
+        pred_class = self.idx_to_class[pred_idx]
+
         result = {
             'image_path': str(image_path),
-            'prediction': self.idx_to_class[pred_class],
-            'class_name': self.class_names[pred_class],
-            'confidence': conf_score,
-            'probabilities': probabilities.cpu().numpy()[0]
+            'prediction': pred_class,
+            'class_name': self.class_names_cn[pred_idx],
+            'confidence': confidence.item(),
+            'probabilities': {self.class_names_cn[i]: float(probabilities[0][i].item()) for i in range(self.num_classes)},
+            'timestamp': datetime.now().isoformat()
         }
-        
+
+        if explain and self.explainability:
+            try:
+                report = self.explainability.analyze(
+                    image=image, image_tensor=image_tensor,
+                    prediction_class=pred_class, pred_idx=pred_idx,
+                    confidence=float(confidence.item()),
+                    probabilities=result['probabilities']
+                )
+                result['explainability'] = {
+                    'regions': report.get('regions', [])[:3],
+                    'indicators': report.get('indicators', []),
+                    'abnormal_count': report.get('abnormal_indicator_count', 0),
+                    'total_indicators': report.get('total_indicators', 0),
+                }
+                risk = self.risk_assessor.generate(prediction_result=result, explainability_report=report)
+                result['risk_report'] = risk
+            except Exception as e:
+                print(f"可解释性分析失败: {e}")
+
         return result
-    
-    def predict_batch(self, image_dir):
-        """
-        批量预测文件夹中的所有图片
-        
-        参数:
-            image_dir: 图片文件夹路径
-            
-        返回:
-            list: 所有图片的预测结果
-        """
+
+    def predict_batch(self, image_dir, explain=False):
         image_dir = Path(image_dir)
-        
-        if not image_dir.exists():
-            raise FileNotFoundError(f"文件夹不存在：{image_dir}")
-        
-        # 获取所有图片
         image_files = list(image_dir.glob("*.jpg")) + list(image_dir.glob("*.png"))
-        
-        if len(image_files) == 0:
-            print(f"❌ 文件夹中没有图片：{image_dir}")
-            return []
-        
-        print(f"📁 发现 {len(image_files)} 张图片，开始批量预测...")
-        
+        print(f"发现 {len(image_files)} 张图片")
+
         results = []
         for img_path in image_files:
             try:
-                result = self.predict(img_path)
-                results.append(result)
+                r = self.predict(img_path, explain=explain)
+                results.append(r)
+                print(f"  {img_path.name}: {r['class_name']} ({r['confidence']:.1%})")
             except Exception as e:
-                print(f"⚠️ 预测失败 {img_path}: {e}")
-        
-        # 统计
-        kc_count = sum(1 for r in results if r['prediction'] == 'KC')
-        normal_count = sum(1 for r in results if r['prediction'] == 'Normal')
-        
-        print(f"\n📊 批量预测结果：")
-        print(f"   总图片数：{len(results)}")
-        print(f"   圆锥角膜（异常）: {kc_count} 张 ({kc_count/len(results)*100:.1f}%)")
-        print(f"   正常角膜：{normal_count} 张 ({normal_count/len(results)*100:.1f}%)")
-        
+                print(f"  {img_path.name}: 失败 - {e}")
+
         return results
-    
-    def visualize(self, image_path, save_path=None):
-        """
-        可视化预测结果
-        
-        参数:
-            image_path: 图片路径
-            save_path: 保存路径（可选）
-        """
-        result = self.predict(image_path)
-        
-        # 读取图片
-        image = Image.open(image_path)
-        
-        # 创建图表
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
-        
-        # 显示原图
-        ax1.imshow(image)
-        ax1.set_title(f'角膜地形图\n{Path(image_path).name}', fontsize=14, fontweight='bold')
-        ax1.axis('off')
-        
-        # 显示预测结果
-        classes = self.class_names
-        probs = result['probabilities']
-        colors = ['#FF6B6B' if result['prediction'] == 'KC' else '#4ECDC4',
-                  '#4ECDC4' if result['prediction'] == 'KC' else '#FF6B6B']
-        
-        bars = ax2.barh(classes, probs, color=colors)
-        ax2.set_xlim(0, 1)
-        ax2.set_xlabel('置信度', fontsize=12)
-        ax2.set_title('预测结果', fontsize=14, fontweight='bold')
-        
-        # 添加数值标签
-        for bar, prob in zip(bars, probs):
-            width = bar.get_width()
-            ax2.text(width + 0.02, bar.get_y() + bar.get_height()/2,
-                    f'{prob*100:.1f}%', va='center', fontsize=12, fontweight='bold')
-        
-        # 添加总体判断
-        judgment = "⚠️ 异常 - 建议进一步检查" if result['prediction'] == 'KC' else "✅ 正常 - 符合手术条件"
-        judgment_color = 'red' if result['prediction'] == 'KC' else 'green'
-        
-        fig.suptitle(
-            f'{result["class_name"]} (置信度：{result["confidence"]*100:.1f}%)\n{judgment}',
-            fontsize=16,
-            fontweight='bold',
-            color=judgment_color,
-            y=1.05
-        )
-        
-        plt.tight_layout()
-        
-        if save_path:
-            plt.savefig(save_path, dpi=150, bbox_inches='tight')
-            print(f"📸 结果已保存：{save_path}")
-        else:
-            plt.show()
-        
-        plt.close()
-        
-        return result
+
+    def print_report(self, result):
+        """打印完整诊断报告"""
+        print("\n" + "=" * 56)
+        print("        角膜地形图AI辅助诊断报告")
+        print("=" * 56)
+        print(f"\n【诊断结果】")
+        print(f"  分类: {result['class_name']}")
+        print(f"  置信度: {result['confidence']:.1%}")
+        print(f"  检查时间: {result['timestamp']}")
+
+        print(f"\n【概率分布】")
+        for name, prob in result['probabilities'].items():
+            bar = "█" * int(prob * 20)
+            print(f"  {name:12s} {bar} {prob:.1%}")
+
+        if 'explainability' in result and result['explainability']:
+            exp = result['explainability']
+            if exp.get('indicators'):
+                print(f"\n【临床指标】")
+                for ind in exp['indicators']:
+                    mark = "✅" if not ind['abnormal'] else "❌"
+                    print(f"  {mark} {ind['name']}: {ind['value']} {ind['unit']} (正常: {ind['normal_range']}) - {ind['status']}")
+                print(f"  异常指标: {exp.get('abnormal_count', 0)}/{exp.get('total_indicators', 0)}项")
+
+            if exp.get('regions'):
+                print(f"\n【关键区域】")
+                for r in exp['regions'][:3]:
+                    print(f"  • {r['region_type']} - 关注度: {r['avg_attention']:.2f} 严重度: {r['severity']}")
+
+        if 'risk_report' in result and result['risk_report']:
+            risk = result['risk_report']
+            ra = risk.get('risk_assessment', {})
+            sr = ra.get('surgery_risk', {})
+            print(f"\n【风险评估】")
+            print(f"  手术风险: {sr.get('level', '--')} - {sr.get('description', '--')}")
+            print(f"  随访建议: {ra.get('follow_up', {}).get('interval', '--')}")
+
+            print(f"\n【临床建议】")
+            for i, rec in enumerate(risk.get('clinical_recommendations', []), 1):
+                print(f"  {i}. {rec}")
+
+        print("\n【免责声明】本报告仅供参考，最终诊断请以临床医生判断为准。")
+        print("=" * 56)
 
 
 def main():
-    """主函数"""
-    parser = argparse.ArgumentParser(description='2026 角膜地形图分类预测')
+    parser = argparse.ArgumentParser(description='角膜地形图预测 v2.0')
     parser.add_argument('--image', type=str, help='单张图片路径')
-    parser.add_argument('--dir', type=str, help='批量预测文件夹路径')
-    parser.add_argument('--model', type=str, default='checkpoints/best_model.pth',
-                       help='模型权重文件路径')
-    parser.add_argument('--save', type=str, help='保存可视化结果的路径')
-    
+    parser.add_argument('--dir', type=str, help='批量预测文件夹')
+    parser.add_argument('--model', type=str, default='checkpoints/best_model.pth')
+    parser.add_argument('--explain', action='store_true', help='启用可解释性分析')
+    parser.add_argument('--save_json', type=str, help='保存结果为JSON')
     args = parser.parse_args()
-    
-    print("="*60)
-    print("2026 角膜地形图分类预测系统")
-    print("="*60)
-    
-    # 创建预测器
+
+    print("=" * 60)
+    print(f"角膜地形图智能诊断系统 v2.0 ({'4分类' if True else '2分类'})")
+    print("=" * 60)
+
     predictor = CornealPredictor(model_path=args.model)
-    
+
     if args.image:
-        # 单张图片预测
-        print(f"\n📸 预测图片：{args.image}")
-        result = predictor.predict(args.image)
-        
-        print(f"\n预测结果:")
-        print(f"   类别：{result['class_name']}")
-        print(f"   置信度：{result['confidence']*100:.2f}%")
-        
-        if args.save:
-            predictor.visualize(args.image, save_path=args.save)
-        else:
-            predictor.visualize(args.image)
-    
+        result = predictor.predict(args.image, explain=args.explain)
+        predictor.print_report(result)
+        if args.save_json:
+            with open(args.save_json, 'w', encoding='utf-8') as f:
+                json.dump(result, f, ensure_ascii=False, indent=2, default=str)
+            print(f"\n结果已保存: {args.save_json}")
+
     elif args.dir:
-        # 批量预测
-        print(f"\n📁 批量预测文件夹：{args.dir}")
-        results = predictor.predict_batch(args.dir)
-        
-        # 保存结果为 CSV
-        if len(results) > 0:
-            import pandas as pd
-            df = pd.DataFrame(results)
-            df.to_csv('prediction_results.csv', index=False, encoding='utf-8-sig')
-            print(f"\n📄 预测结果已保存：prediction_results.csv")
-    
+        results = predictor.predict_batch(args.dir, explain=args.explain)
+        if args.save_json:
+            with open(args.save_json, 'w', encoding='utf-8') as f:
+                json.dump(results, f, ensure_ascii=False, indent=2, default=str)
+            print(f"\n结果已保存: {args.save_json}")
     else:
-        # 交互式预测（测试用）
-        print("\n💡 使用示例:")
-        print("   python predict.py --image data/kc/1.jpg")
-        print("   python predict.py --dir data/kc --save result.png")
-        print("   python predict.py --image data/normal/1.jpg --model checkpoints/best_model.pth")
-        
-        # 测试一张图片
-        test_image = Path('data/kc/1.jpg')
-        if test_image.exists():
-            print(f"\n🧪 测试图片：{test_image}")
-            result = predictor.predict(test_image)
-            print(f"   预测：{result['class_name']}")
-            print(f"   置信度：{result['confidence']*100:.2f}%")
-    
-    print("\n" + "="*60)
+        print("\n使用示例:")
+        print("  python predict.py --image data/kc/1.jpg --explain")
+        print("  python predict.py --dir data/ --explain --save_json results.json")
 
 
 if __name__ == "__main__":
