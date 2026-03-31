@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image
 from typing import Dict, List, Tuple, Optional
 from scipy import ndimage
-import cv2
+import io
 import logging
 
 logger = logging.getLogger(__name__)
@@ -125,7 +125,8 @@ class AttentionRegionAnalyzer:
         Returns:
             按关注度排序的区域信息列表
         """
-        resized = cv2.resize(heatmap, (image_size[1], image_size[0]))
+        resized = np.array(Image.fromarray((heatmap * 255).astype(np.uint8)).resize(
+            (image_size[1], image_size[0]), Image.BILINEAR)) / 255.0
 
         binary = (resized > self.attention_threshold).astype(np.uint8)
         if binary.sum() == 0:
@@ -205,7 +206,7 @@ class FeatureExtractor:
         h, w = image.shape[:2]
 
         # 分析色彩分布模拟角膜曲率
-        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY) if len(image.shape) == 3 else image
+        gray = np.array(Image.fromarray(image).convert('L')) if len(image.shape) == 3 else image
         center_region = gray[h//4:3*h//4, w//4:3*w//4]
         edge_region_top = gray[:h//4, :]
         edge_region_bottom = gray[3*h//4:, :]
@@ -231,7 +232,7 @@ class FeatureExtractor:
     def _extract_symmetry(self, image: np.ndarray) -> Dict:
         """提取对称性特征（模拟 I-S 值等）"""
         h, w = image.shape[:2]
-        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY) if len(image.shape) == 3 else image
+        gray = np.array(Image.fromarray(image).convert('L')) if len(image.shape) == 3 else image
 
         half = h // 2
         top_half = gray[:half, :]
@@ -258,22 +259,48 @@ class FeatureExtractor:
     def _extract_morphology(self, image: np.ndarray) -> Dict:
         """提取形态学特征"""
         h, w = image.shape[:2]
-        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY) if len(image.shape) == 3 else image
+        gray = np.array(Image.fromarray(image).convert('L')) if len(image.shape) == 3 else image
 
         center_region = gray[h//4:3*h//4, w//4:3*w//4]
         center_std = round(float(np.std(center_region)), 1)
 
-        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # Otsu threshold without cv2
+        hist, _ = np.histogram(gray.ravel(), bins=256, range=(0, 256))
+        total = gray.size
+        sum_total = np.sum(np.arange(256) * hist)
+        sum_bg = 0.0
+        w_bg = 0
+        best_thresh = 0
+        max_var = 0
+        for t in range(256):
+            w_bg += hist[t]
+            if w_bg == 0:
+                continue
+            w_fg = total - w_bg
+            if w_fg == 0:
+                break
+            sum_bg += t * hist[t]
+            m_bg = sum_bg / w_bg
+            m_fg = (sum_total - sum_bg) / w_fg
+            var_between = w_bg * w_fg * (m_bg - m_fg) ** 2
+            if var_between > max_var:
+                max_var = var_between
+                best_thresh = t
+        binary = (gray > best_thresh).astype(np.uint8) * 255
 
         regularity = 0.8
-        if len(contours) > 0:
-            largest = max(contours, key=cv2.contourArea)
-            area = cv2.contourArea(largest)
-            perimeter = cv2.arcLength(largest, True)
-            if perimeter > 0:
-                circularity = 4 * np.pi * area / (perimeter ** 2)
-                regularity = round(min(circularity, 1.0), 2)
+        # Simple circularity estimation without cv2 findContours
+        nonzero = np.count_nonzero(binary)
+        if nonzero > 0:
+            ys, xs = np.where(binary > 0)
+            area = float(nonzero)
+            # Estimate perimeter from boundary pixels
+            from scipy.ndimage import binary_erosion
+            eroded = binary_erosion(binary)
+            boundary = binary - eroded
+            perimeter = max(float(np.count_nonzero(boundary)), 1.0)
+            circularity = 4 * np.pi * area / (perimeter ** 2)
+            regularity = round(min(circularity, 1.0), 2)
 
         return {
             '中心区域均匀度': center_std,
@@ -414,10 +441,25 @@ class DecisionPathAnalyzer:
 # ══════════════════════════════════════════
 
 class HeatmapVisualizer:
-    """热力图生成与叠加"""
+    """热力图生成与叠加 - 纯 numpy/PIL 实现，无需 cv2"""
 
     @staticmethod
-    def overlay_heatmap(image: Image.Image, heatmap: np.ndarray, alpha: float = 0.4) -> np.ndarray:
+    def _jet_colormap(value: float) -> Tuple[int, int, int]:
+        """模拟 cv2.COLORMAP_JET 的单值映射"""
+        # value: 0~255
+        v = max(0, min(255, value))
+        if v < 128:
+            r = 0
+            g = int(255 * v / 128)
+            b = int(255 * (128 - v) / 128)
+        else:
+            r = int(255 * (v - 128) / 128)
+            g = int(255 * (256 - v) / 128)
+            b = 0
+        return (r, g, b)
+
+    @staticmethod
+    def overlay_heatmap(image: Image.Image, heatmap: np.ndarray, alpha: float = 0.4) -> Image.Image:
         """
         将热力图叠加到原图上
 
@@ -427,24 +469,34 @@ class HeatmapVisualizer:
             alpha: 叠加透明度
 
         Returns:
-            BGR numpy array (用于 cv2 显示/保存)
+            PIL Image 叠加热力图后的图片
         """
-        img = np.array(image)
-        if img.shape[2] == 4:
-            img = img[:, :, :3]
+        img = image.convert('RGB')
+        img_np = np.array(img)
 
-        heatmap_resized = cv2.resize(heatmap, (img.shape[1], img.shape[0]))
-        heatmap_color = cv2.applyColorMap((heatmap_resized * 255).astype(np.uint8), cv2.COLORMAP_JET)
+        heatmap_resized = np.array(Image.fromarray(
+            (heatmap * 255).astype(np.uint8)).resize((img_np.shape[1], img_np.shape[0]),
+            Image.BILINEAR))
+        heatmap_uint8 = heatmap_resized.astype(np.uint8)
 
-        blended = cv2.addWeighted(img[:, :, ::-1], 1 - alpha, heatmap_color, alpha, 0)
-        return blended
+        # 应用 JET colormap
+        heatmap_color = np.zeros((*heatmap_uint8.shape, 3), dtype=np.uint8)
+        for v in range(256):
+            mask = heatmap_uint8 == v
+            if mask.any():
+                heatmap_color[mask] = HeatmapVisualizer._jet_colormap(v)
+
+        # 混合
+        blended = ((1 - alpha) * img_np.astype(np.float32) + alpha * heatmap_color.astype(np.float32)).astype(np.uint8)
+        return Image.fromarray(blended)
 
     @staticmethod
     def heatmap_to_bytes(heatmap: np.ndarray, image: Image.Image, alpha: float = 0.4) -> bytes:
         """生成叠加热力图的 PNG 字节流"""
         blended = HeatmapVisualizer.overlay_heatmap(image, heatmap, alpha)
-        success, buffer = cv2.imencode('.png', blended)
-        return buffer.tobytes() if success else b''
+        buf = io.BytesIO()
+        blended.save(buf, format='PNG')
+        return buf.getvalue()
 
 
 # ══════════════════════════════════════════
