@@ -72,8 +72,13 @@ p,li,span,div,label {{ font-family:'DM Sans',sans-serif!important; color:var(--t
 .stTabs [data-baseweb="tab-content"] {{ background:transparent!important; border:none!important; }}
 .stButton > button {{ background:var(--accent)!important; color:#FFFFFF!important; border:none!important; border-radius:8px!important; font-family:'DM Sans',sans-serif!important; font-weight:600!important; padding:0.75rem 1.5rem!important; transition:all 0.2s; }}
 .stButton > button:hover {{ transform:translateY(-2px); box-shadow:0 6px 20px rgba(88,129,87,0.3); }}
-[data-testid="stFileUploader"] {{ background:var(--surface)!important; border:2px dashed var(--border)!important; border-radius:12px!important; padding:2rem!important; }}
-[data-testid="stFileUploader"] section {{ background:transparent!important; border:none!important; }}
+[data-testid="stFileUploader"] {{ background:var(--surface)!important; border:2px dashed var(--border)!important; border-radius:12px!important; padding:1.2rem 1rem!important; }}
+[data-testid="stFileUploader"] > div {{ background:transparent!important; }}
+/* 隐藏文件上传器内部标签，解决文字重叠 */
+[data-testid="stFileUploader"] [data-baseweb="form-label"],
+[data-testid="stFileUploader"] label,
+[data-testid="stFileUploader"] .stMarkdown,
+[data-testid="stFileUploader"] p:first-child {{ display:none!important; visibility:hidden!important; height:0!important; overflow:hidden!important; margin:0!important; padding:0!important; font-size:0!important; }}
 .stProgress > div > div > div {{ background:var(--accent)!important; border-radius:4px!important; }}
 .stMetric {{ background:var(--surface)!important; border:1px solid var(--border)!important; border-radius:10px!important; }}
 .dataframe {{ background:var(--surface)!important; border:1px solid var(--border)!important; border-radius:8px!important; }}
@@ -103,7 +108,33 @@ p,li,span,div,label {{ font-family:'DM Sans',sans-serif!important; color:var(--t
 .evidence-row {{ display:flex; align-items:flex-start; gap:8px; padding:0.35rem 0; font-size:0.85rem; line-height:1.6; }}
 .evidence-row:last-child {{ padding-bottom:0; }}
 .rec-badge {{ display:inline-block; padding:1px 8px; border-radius:6px; font-size:0.72rem; font-weight:600; flex-shrink:0; }}
+/* 文件上传器：隐藏内部重复的 Upload 标签 */
+[data-testid="stFileUploader"] span:first-of-type {{ display:none!important; }}
+[data-testid="stFileUploader"] [class*="label"] {{ font-size:1px!important; color:transparent!important; }}
 </style>
+<script>
+// 页面加载后移除 file_uploader 内部重复的 "Upload" 文本
+(function fixUploader() {{
+    var observer = new MutationObserver(function() {{
+        document.querySelectorAll('[data-testid="stFileUploader"]').forEach(function(el) {{
+            el.querySelectorAll('span, label, p').forEach(function(child) {{
+                if (child.textContent.trim() === 'upload' || child.textContent.trim() === 'Upload') {{
+                    child.style.display = 'none';
+                }}
+            }});
+        }});
+    }});
+    observer.observe(document.body, {{ childList:true, subtree:true }});
+    // 立即执行一次
+    document.querySelectorAll('[data-testid="stFileUploader"]').forEach(function(el) {{
+        el.querySelectorAll('span, label, p').forEach(function(child) {{
+            if (child.textContent.trim() === 'upload' || child.textContent.trim() === 'Upload') {{
+                child.style.display = 'none';
+            }}
+        }});
+    }});
+}})();
+</script>
 """, unsafe_allow_html=True)
 
 # ── SVG 图标 ──
@@ -609,10 +640,10 @@ if model_service is None:
     st.stop()
 
 tab1, tab2, tab3, tab4 = st.tabs([
-    '🔍  智能诊断',
-    '🧠  可解释性分析',
-    '📊  批量筛查',
-    '📋  病例管理',
+    '⌕  智能诊断',
+    '◎  可解释性分析',
+    '▤  批量筛查',
+    '☐  病例管理',
 ])
 
 
@@ -623,7 +654,7 @@ with tab1:
     with col_img:
         st.markdown(f'''
         <p class="section-label">{ICONS["upload"]} 上传角膜地形图</p>''', unsafe_allow_html=True)
-        uploaded_file = st.file_uploader("", type=['jpg', 'jpeg', 'png'])
+        uploaded_file = st.file_uploader(" ", type=['jpg', 'jpeg', 'png'], help=None)
 
         image = None
         if uploaded_file is not None:
@@ -956,10 +987,12 @@ with tab4:
         <p class="section-label">{ICONS["clipboard"]} 病例管理</p>''', unsafe_allow_html=True)
 
         sub_tab1, sub_tab2, sub_tab3 = st.tabs([
-            '🔍  患者列表',
-            '👥  新建患者',
-            '📊  统计分析',
+            '⌕  患者列表',
+            '＋  新建患者',
+            '▤  统计分析',
         ])
+
+        # ── 子Tab 1: 患者列表 ──
 
         # ── 子Tab 1: 患者列表 ──
         with sub_tab1:
