@@ -609,10 +609,10 @@ if model_service is None:
     st.stop()
 
 tab1, tab2, tab3, tab4 = st.tabs([
-    f'{ICONS["search"]}  智能诊断',
-    f'{ICONS["brain"]}  可解释性分析',
-    f'{ICONS["bar"]}  批量筛查',
-    f'{ICONS["clipboard"]}  病例管理',
+    '🔍  智能诊断',
+    '🧠  可解释性分析',
+    '📊  批量筛查',
+    '📋  病例管理',
 ])
 
 
@@ -623,7 +623,7 @@ with tab1:
     with col_img:
         st.markdown(f'''
         <p class="section-label">{ICONS["upload"]} 上传角膜地形图</p>''', unsafe_allow_html=True)
-        uploaded_file = st.file_uploader(" ", type=['jpg', 'jpeg', 'png'], label_visibility="collapsed")
+        uploaded_file = st.file_uploader("", type=['jpg', 'jpeg', 'png'])
 
         image = None
         if uploaded_file is not None:
@@ -739,8 +739,8 @@ with tab2:
         上传图片后，系统将展示 AI 的完整判断依据：Grad-CAM 热力图、关键区域分析、临床指标对比、决策路径、风险评估。
     </p>''', unsafe_allow_html=True)
 
-    explain_file = st.file_uploader("上传角膜地形图进行可解释性分析", type=['jpg', 'jpeg', 'png'],
-                                    label_visibility="collapsed", key="explain_uploader")
+    explain_file = st.file_uploader(" ", type=['jpg', 'jpeg', 'png'],
+                                    key="explain_uploader")
 
     if explain_file:
         col_ex_img, col_ex_res = st.columns([2, 3], gap="large")
@@ -862,8 +862,8 @@ with tab2:
 
 # ─── Tab 3: 批量筛查 ───
 with tab3:
-    uploaded_files = st.file_uploader("选择多张角膜地形图", type=['jpg', 'jpeg', 'png'],
-                                      accept_multiple_files=True, label_visibility="collapsed", key="batch_uploader")
+    uploaded_files = st.file_uploader("选择或拖拽多张角膜地形图", type=['jpg', 'jpeg', 'png'],
+                                      accept_multiple_files=True, key="batch_uploader")
 
     if not uploaded_files:
         st.markdown(f'''
@@ -956,9 +956,9 @@ with tab4:
         <p class="section-label">{ICONS["clipboard"]} 病例管理</p>''', unsafe_allow_html=True)
 
         sub_tab1, sub_tab2, sub_tab3 = st.tabs([
-            f'{ICONS["search"]}  患者列表',
-            f'{ICONS["users"]}  新建患者',
-            f'{ICONS["bar"]}  统计分析',
+            '🔍  患者列表',
+            '👥  新建患者',
+            '📊  统计分析',
         ])
 
         # ── 子Tab 1: 患者列表 ──
