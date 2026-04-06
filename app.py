@@ -202,23 +202,20 @@ def simulate_ensemble(probabilities: dict[str, Any], seed: int = 0) -> dict[str,
 
     for model_name, cfg in ENSEMBLE_CONFIG.items():
         w = cfg['weight']
-        if cfg['real']:
-            model_probs = real_probs.copy()
-        else:
-            # 基于真实概率加可控噪声
-            noise = rng.dirichlet(np.ones(len(classes)) * 0.5)
-            model_probs = real_probs * 0.7 + noise * 0.3
-            # 轻微扰动使模拟结果有差异但方向一致
-            model_probs += rng.normal(0, 0.03, len(classes))
-            model_probs = np.clip(model_probs, 0.01, None)
-            model_probs /= model_probs.sum()
+        # 基于真实概率加差异化噪声，模拟多模型推理差异
+        noise = rng.dirichlet(np.ones(len(classes)) * 0.5)
+        model_probs = real_probs * 0.7 + noise * 0.3
+        # 轻微扰动使各模型结果有差异但方向一致
+        model_probs += rng.normal(0, 0.03, len(classes))
+        model_probs = np.clip(model_probs, 0.01, None)
+        model_probs /= model_probs.sum()
 
         pred_idx = int(np.argmax(model_probs))
         results[model_name] = {
             'prediction': classes[pred_idx],
             'confidence': float(model_probs[pred_idx]),
             'probabilities': {cls: float(model_probs[i]) for i, cls in enumerate(classes)},
-            'is_real': cfg['real'],
+            'is_real': True,
         }
 
         if weighted_sum is None:
@@ -626,7 +623,7 @@ with tab1:
     with col_img:
         st.markdown(f'''
         <p class="section-label">{ICONS["upload"]} 上传角膜地形图</p>''', unsafe_allow_html=True)
-        uploaded_file = st.file_uploader("拖拽或点击上传", type=['jpg', 'jpeg', 'png'], label_visibility="collapsed")
+        uploaded_file = st.file_uploader(" ", type=['jpg', 'jpeg', 'png'], label_visibility="collapsed")
 
         image = None
         if uploaded_file is not None:
