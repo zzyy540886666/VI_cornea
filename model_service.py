@@ -36,19 +36,19 @@ logger = logging.getLogger(__name__)
 
 
 # ══════════════════════════════════════════
-#  类别配置
+#  类别配置（idx 对应模型输出 logits 的索引）
 # ══════════════════════════════════════════
 
 CLASS_CONFIG_4 = {
-    'Normal':      {'idx': 0, 'name_cn': '正常角膜',      'color': '#588157', 'severity': 0},
-    'Mild KC':     {'idx': 1, 'name_cn': '轻度圆锥角膜',  'color': '#DDA15E', 'severity': 1},
-    'Moderate KC': {'idx': 2, 'name_cn': '中度圆锥角膜',  'color': '#E07A3A', 'severity': 2},
-    'Severe KC':   {'idx': 3, 'name_cn': '重度圆锥角膜',  'color': '#BC4749', 'severity': 3},
+    'Normal':      {'idx': 3, 'name_cn': '正常角膜',      'color': '#588157', 'severity': 0},
+    'Mild KC':     {'idx': 2, 'name_cn': '轻度圆锥角膜',  'color': '#DDA15E', 'severity': 1},
+    'Moderate KC': {'idx': 1, 'name_cn': '中度圆锥角膜',  'color': '#E07A3A', 'severity': 2},
+    'Severe KC':   {'idx': 0, 'name_cn': '重度圆锥角膜',  'color': '#BC4749', 'severity': 3},
 }
 
 CLASS_CONFIG_2 = {
-    'Normal': {'idx': 0, 'name_cn': '正常角膜', 'color': '#588157', 'severity': 0},
-    'KC':     {'idx': 1, 'name_cn': '圆锥角膜（异常）', 'color': '#BC4749', 'severity': 2},
+    'Normal': {'idx': 1, 'name_cn': '正常角膜', 'color': '#588157', 'severity': 0},
+    'KC':     {'idx': 0, 'name_cn': '圆锥角膜（异常）', 'color': '#BC4749', 'severity': 2},
 }
 
 
