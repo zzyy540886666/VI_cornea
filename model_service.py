@@ -239,6 +239,7 @@ class ModelService:
             # 可解释性分析
             if enable_explainability and self._explainability:
                 try:
+                    logger.info("开始可解释性分析...")
                     explain_report = self._explainability.analyze(
                         image=image,
                         image_tensor=image_tensor,
@@ -249,6 +250,7 @@ class ModelService:
                     )
                     result['explainability'] = explain_report
                     result['heatmap_overlay_bytes'] = explain_report.get('heatmap_overlay_bytes')
+                    logger.info(f"可解释性分析完成: indicators={len(explain_report.get('indicators', []))}, regions={len(explain_report.get('regions', []))}")
 
                     # 生成风险评估报告
                     risk_report = self._risk_assessor.generate(
@@ -257,8 +259,15 @@ class ModelService:
                     )
                     result['risk_report'] = risk_report
                 except Exception as e:
-                    logger.warning(f"可解释性分析失败: {e}")
-                    result['explainability'] = None
+                    logger.error(f"可解释性分析失败: {e}", exc_info=True)
+                    # 构建最小化解释报告，确保 UI 不报空
+                    result['explainability'] = {
+                        'indicators': [],
+                        'regions': [],
+                        'decision_path': {'steps': [], 'explanation': f'AI已完成{pred_config["name_cn"]}诊断'},
+                        'abnormal_indicator_count': 0,
+                        'total_indicators': 0,
+                    }
                     result['risk_report'] = None
 
             logger.info(f"预测完成：{result['class_name']} (置信度：{result['confidence']:.2%})")

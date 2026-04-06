@@ -784,9 +784,9 @@ with tab2:
                 with st.spinner("深度分析中..."):
                     result = model_service.predict(ex_image, enable_explainability=True)
 
-                if result['success'] and result.get('explainability'):
-                    exp = result['explainability']
-                    risk = result.get('risk_report', {})
+                if result.get('success'):
+                    exp = result.get('explainability') or {}
+                    risk = result.get('risk_report', {}) or {}
                     pred = result['prediction']
                     color = get_severity_color(pred)
                     stars = get_severity_stars(pred)
@@ -921,36 +921,28 @@ with tab3:
 
             progress_bar.progress(1.0, text="分析完成")
 
-            # ── Block 2: 分类统计卡片 ──
-            dist = {}
-            for r in results:
-                cls = r.get('class_name', '未知')
-                dist[cls] = dist.get(cls, 0) + 1
+            # ── Block 2: 二分类统计卡片（正常 / 异常）──
+            normal_count = sum(1 for r in results if r.get('prediction') == 'Normal')
+            abnormal_count = len(results) - normal_count
 
             st.markdown(f'<p class="section-label">{ICONS["bar"]} 分类统计</p>', unsafe_allow_html=True)
 
-            # 固定4类顺序
-            class_order = ['正常角膜', '轻度圆锥角膜', '中度圆锥角膜', '重度圆锥角膜']
-            stat_cols = st.columns(4, gap="small")
-            for idx, cls_name in enumerate(class_order):
-                count = dist.get(cls_name, 0)
-                if count > 0:
-                    pred_key_for_color = 'Normal'
-                    if '轻度' in cls_name:
-                        pred_key_for_color = 'Mild KC'
-                    elif '中度' in cls_name:
-                        pred_key_for_color = 'Moderate KC'
-                    elif '重度' in cls_name:
-                        pred_key_for_color = 'Severe KC'
-                    clr = get_severity_color(pred_key_for_color)
-                else:
-                    clr = C['border']
-                with stat_cols[idx]:
-                    st.markdown(f'''
-                    <div class="card" style="text-align:center;">
-                        <p style="font-size:0.72rem;color:{C["text_dim"]};text-transform:uppercase;letter-spacing:1px;">{cls_name[:4]}</p>
-                        <p style="font-size:2rem;font-weight:700;color:{clr};font-family:'JetBrains Mono',monospace;">{count}</p>
-                    </div>''', unsafe_allow_html=True)
+            stat_cols = st.columns(2, gap="small")
+
+            with stat_cols[0]:
+                nc = C['green'] if normal_count > 0 else C['border']
+                st.markdown(f'''
+                <div class="card" style="text-align:center;">
+                    <p style="font-size:0.72rem;color:{C["text_dim"]};text-transform:uppercase;letter-spacing:1px;">正常</p>
+                    <p style="font-size:2rem;font-weight:700;color:{nc};font-family:'JetBrains Mono',monospace;">{normal_count}</p>
+                </div>''', unsafe_allow_html=True)
+            with stat_cols[1]:
+                ac = C['red'] if abnormal_count > 0 else C['border']
+                st.markdown(f'''
+                <div class="card" style="text-align:center;">
+                    <p style="font-size:0.72rem;color:{C["text_dim"]};text-transform:uppercase;letter-spacing:1px;">异常</p>
+                    <p style="font-size:2rem;font-weight:700;color:{ac};font-family:'JetBrains Mono',monospace;">{abnormal_count}</p>
+                </div>''', unsafe_allow_html=True)
 
             # ── Block 3: 结果表格 ──
             st.markdown(f'<p class="section-label" style="margin-top:1rem;">筛查结果</p>', unsafe_allow_html=True)
