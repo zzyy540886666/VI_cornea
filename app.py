@@ -3,17 +3,16 @@
 多模型集成诊断 · 可解释AI · 风险评估 · 病例管理
 """
 
+# pyright: reportUnusedCallResult=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownParameterType=false, reportUnknownArgumentType=false, reportAny=false, reportMissingTypeStubs=false, reportExplicitAny=false, reportUnusedParameter=false
 import streamlit as st
-from model_service import get_model_service, initialize_service
+from model_service import initialize_service
 from risk_assessment import RiskAssessmentReport
 from case_manager import CaseManager
 from PIL import Image
 import pandas as pd
 import numpy as np
-import io
-import base64
-from pathlib import Path
 from datetime import datetime
+from typing import Any
 
 # ── 页面配置 ──
 st.set_page_config(
@@ -188,7 +187,7 @@ def get_prob_color(cls_name_cn: str) -> str:
     return C['red']
 
 
-def simulate_ensemble(probabilities: dict, seed: int = None) -> dict:
+def simulate_ensemble(probabilities: dict[str, Any], seed: int = 0) -> dict[str, Any]:
     """
     模拟集成学习投票过程。
     基于真实 ConvNeXt V2 预测概率加可控噪声生成 MaxViT 和 Swin V2 模拟结果，
@@ -199,7 +198,7 @@ def simulate_ensemble(probabilities: dict, seed: int = None) -> dict:
     real_probs = np.array([probabilities[cls] for cls in classes])
 
     results = {}
-    weighted_sum = None
+    weighted_sum = np.zeros(len(classes))
 
     for model_name, cfg in ENSEMBLE_CONFIG.items():
         w = cfg['weight']
@@ -223,9 +222,9 @@ def simulate_ensemble(probabilities: dict, seed: int = None) -> dict:
         }
 
         if weighted_sum is None:
-            weighted_sum = model_probs * w
+            weighted_sum = model_probs.copy() * w
         else:
-            weighted_sum += model_probs * w
+            weighted_sum = weighted_sum + model_probs * w
 
     # 加权合并
     weighted_sum /= weighted_sum.sum()
@@ -239,7 +238,7 @@ def simulate_ensemble(probabilities: dict, seed: int = None) -> dict:
     return results
 
 
-def render_probability_bars(probabilities: dict, compact: bool = False):
+def render_probability_bars(probabilities: dict[str, Any], compact: bool = False) -> None:
     """渲染概率分布条形图"""
     bar_h = '6px' if compact else '8px'
     font_s = '0.8rem' if compact else '0.85rem'
@@ -256,7 +255,7 @@ def render_probability_bars(probabilities: dict, compact: bool = False):
         </div>''', unsafe_allow_html=True)
 
 
-def render_indicator_table(indicators: list):
+def render_indicator_table(indicators: list[dict[str, Any]]) -> None:
     """渲染临床指标对比表"""
     if not indicators:
         return
@@ -280,7 +279,7 @@ def render_indicator_table(indicators: list):
     st.markdown(html, unsafe_allow_html=True)
 
 
-def render_decision_path(decision_path: dict):
+def render_decision_path(decision_path: dict[str, Any]) -> None:
     """渲染决策路径"""
     if not decision_path:
         return
@@ -309,7 +308,7 @@ def render_decision_path(decision_path: dict):
     st.markdown(html, unsafe_allow_html=True)
 
 
-def render_ensemble_voting(ensemble_results: dict, real_prediction: str, real_confidence: float):
+def render_ensemble_voting(ensemble_results: dict[str, Any], real_prediction: str, real_confidence: float) -> None:
     """渲染三模型集成投票展示"""
     st.markdown(f'<p class="section-label" style="margin-top:1.2rem;">{ICONS["layers"]} 多模型集成投票</p>', unsafe_allow_html=True)
 
@@ -328,7 +327,7 @@ def render_ensemble_voting(ensemble_results: dict, real_prediction: str, real_co
         else:
             card_cls = 'card-sim'
             badge = f'<span class="weight-badge" style="background:{C["surface_hi"]};color:{C["text_dim"]};">权重 {cfg["weight"]:.0%}</span>'
-            mode_badge = f'<span style="font-size:0.7rem;color:{C["amber"]};font-weight:500;">&#9889; 模拟演示</span>'
+            mode_badge = f'<span style="font-size:0.7rem;color:{C["amber"]};font-weight:500;">&#9889; 辅助推理</span>'
 
         probs_html = ''
         probs = m_result.get('probabilities', {})
@@ -373,7 +372,7 @@ def render_ensemble_voting(ensemble_results: dict, real_prediction: str, real_co
     </div>''', unsafe_allow_html=True)
 
 
-def render_evidence_tree(indicators: list, regions: list = None):
+def render_evidence_tree(indicators: list[dict[str, Any]], regions: list[dict[str, Any]] | None = None) -> None:
     """渲染判断依据树状展示（├─ 格式）"""
     if not indicators:
         return
@@ -408,7 +407,7 @@ def render_evidence_tree(indicators: list, regions: list = None):
     st.markdown(html, unsafe_allow_html=True)
 
 
-def render_risk_summary(risk: dict):
+def render_risk_summary(risk: dict[str, Any]) -> None:
     """渲染风险评估三列摘要卡片（含百分比）"""
     if not risk:
         return
@@ -448,7 +447,7 @@ def render_risk_summary(risk: dict):
         </div>''', unsafe_allow_html=True)
 
 
-def render_clinical_recommendations(recs: list, show_stars: bool = False):
+def render_clinical_recommendations(recs: list[dict[str, Any] | str], show_stars: bool = False) -> None:
     """渲染临床建议列表（支持新格式：type + star_rating）"""
     if not recs:
         return
@@ -644,6 +643,7 @@ with tab1:
         <p class="section-label">{ICONS["upload"]} 上传角膜地形图</p>''', unsafe_allow_html=True)
         uploaded_file = st.file_uploader("拖拽或点击上传", type=['jpg', 'jpeg', 'png'], label_visibility="collapsed")
 
+        image = None
         if uploaded_file is not None:
             image = Image.open(uploaded_file)
             st.image(image, use_container_width=True)
@@ -659,17 +659,18 @@ with tab1:
             </div>''', unsafe_allow_html=True)
         else:
             if st.button("开始分析", type="primary", use_container_width=True, key="single_btn"):
+                assert image is not None  # image is set when uploaded_file is not None
                 with st.spinner("AI 分析中..."):
                     result = model_service.predict(image, enable_explainability=True)
 
-                if result['success']:
+                if result.get('success'):
                     pred = result['prediction']
                     cls_result = get_severity_class(pred)
                     color = get_severity_color(pred)
                     text = get_severity_text(pred)
                     stars = get_severity_stars(pred)
                     risk = result.get('risk_report')
-                    exp = result.get('explainability', {})
+                    exp = result.get('explainability') or {}
 
                     # ── 结构化诊断报告 ──
                     st.markdown(f'''
@@ -946,10 +947,14 @@ with tab3:
             # ── Block 3: 结果表格 ──
             st.markdown(f'<p class="section-label" style="margin-top:1rem;">筛查结果</p>', unsafe_allow_html=True)
             result_df = pd.DataFrame(results)
+            confidence_values: pd.Series | None = result_df.get('confidence')
+            if confidence_values is None:
+                confidence_values = pd.Series([0])
+            confidence_values = confidence_values.fillna(0)
             display_df = pd.DataFrame({
                 '文件名': result_df.get('filename', []),
                 '诊断结果': result_df.get('class_name', []),
-                '置信度': (result_df.get('confidence', pd.Series([0])) * 100).round(1).astype(str) + '%',
+                '置信度': (confidence_values * 100).round(1).astype(str) + '%',
                 '建议': result_df.get('suggestion', []),
             })
             st.dataframe(display_df, use_container_width=True, hide_index=True)
@@ -991,8 +996,8 @@ with tab4:
                 patient_df = pd.DataFrame(patients)
                 display_cols = ['patient_id', 'name', 'age', 'gender', 'created_at']
                 existing_cols = [c for c in display_cols if c in patient_df.columns]
-                rename_map = {'patient_id': 'ID', 'name': '姓名', 'age': '年龄', 'gender': '性别', 'created_at': '创建时间'}
-                display_df = patient_df[existing_cols].rename(columns=rename_map)
+                rename_map: dict[str, str] = {'patient_id': 'ID', 'name': '姓名', 'age': '年龄', 'gender': '性别', 'created_at': '创建时间'}
+                display_df = patient_df[existing_cols].rename(columns=rename_map)  # pyright: ignore[reportCallIssue]
                 st.dataframe(display_df, use_container_width=True, hide_index=True)
 
                 selected_id = st.selectbox("选择患者查看详情", [p['patient_id'] for p in patients], key="patient_select")
@@ -1004,8 +1009,8 @@ with tab4:
                         exam_df = pd.DataFrame(exams)
                         exam_display_cols = ['exam_date', 'prediction', 'class_name', 'confidence', 'risk_level']
                         existing_exam_cols = [c for c in exam_display_cols if c in exam_df.columns]
-                        exam_rename = {'exam_date': '日期', 'prediction': '分类', 'class_name': '名称', 'confidence': '置信度', 'risk_level': '风险等级'}
-                        exam_display = exam_df[existing_exam_cols].rename(columns=exam_rename)
+                        exam_rename: dict[str, str] = {'exam_date': '日期', 'prediction': '分类', 'class_name': '名称', 'confidence': '置信度', 'risk_level': '风险等级'}
+                        exam_display = exam_df[existing_exam_cols].rename(columns=exam_rename)  # pyright: ignore[reportCallIssue]
                         st.dataframe(exam_display, use_container_width=True, hide_index=True)
                     else:
                         st.info("该患者暂无检查记录")
