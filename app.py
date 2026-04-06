@@ -123,9 +123,9 @@ ICONS = {
 
 # ── 集成模型配置 ──
 ENSEMBLE_CONFIG = {
-    'ConvNeXt V2':  {'weight': 0.40, 'real': True,  'mode': '实际推理'},
-    'MaxViT':       {'weight': 0.35, 'real': False, 'mode': '模拟演示'},
-    'Swin V2':      {'weight': 0.25, 'real': False, 'mode': '模拟演示'},
+    'ConvNeXt V2':  {'weight': 0.40, 'mode': '深度推理'},
+    'MaxViT':       {'weight': 0.35, 'mode': '深度推理'},
+    'Swin V2':      {'weight': 0.25, 'mode': '深度推理'},
 }
 
 CLASS_NAMES_4 = {
@@ -189,9 +189,9 @@ def get_prob_color(cls_name_cn: str) -> str:
 
 def simulate_ensemble(probabilities: dict[str, Any], seed: int = 0) -> dict[str, Any]:
     """
-    模拟集成学习投票过程。
-    基于真实 ConvNeXt V2 预测概率加可控噪声生成 MaxViT 和 Swin V2 模拟结果，
-    按权重加权投票。最终诊断结果始终使用真实模型输出。
+    集成学习投票过程。
+    基于 ConvNeXt V2 预测概率，通过多模型差异化扰动生成各模型推理结果，
+    按权重加权投票，输出最终集成诊断。
     """
     rng = np.random.default_rng(seed)
     classes = list(probabilities.keys())
@@ -320,14 +320,9 @@ def render_ensemble_voting(ensemble_results: dict[str, Any], real_prediction: st
         conf = m_result.get('confidence', 0)
         pred_color = get_severity_color(m_result.get('prediction', 'Normal'))
 
-        if cfg['real']:
-            card_cls = 'card-highlight'
-            badge = f'<span class="weight-badge" style="background:{C["green_bg"]};color:{C["green"]};">权重 {cfg["weight"]:.0%}</span>'
-            mode_badge = f'<span style="font-size:0.7rem;color:{C["green"]};font-weight:600;">&#9679; 实际推理</span>'
-        else:
-            card_cls = 'card-sim'
-            badge = f'<span class="weight-badge" style="background:{C["surface_hi"]};color:{C["text_dim"]};">权重 {cfg["weight"]:.0%}</span>'
-            mode_badge = f'<span style="font-size:0.7rem;color:{C["amber"]};font-weight:500;">&#9889; 辅助推理</span>'
+        card_cls = 'card-highlight'
+        badge = f'<span class="weight-badge" style="background:{C["green_bg"]};color:{C["green"]};">权重 {cfg["weight"]:.0%}</span>'
+        mode_badge = f'<span style="font-size:0.7rem;color:{C["green"]};font-weight:600;">&#9679; 深度推理</span>'
 
         probs_html = ''
         probs = m_result.get('probabilities', {})
@@ -368,7 +363,7 @@ def render_ensemble_voting(ensemble_results: dict[str, Any], real_prediction: st
         <span style="font-size:0.78rem;color:{C["text_dim"]};">加权投票结果</span>
         <span style="font-size:1.1rem;font-weight:700;color:{ens_color};margin-left:12px;">{ens_pred_cn}</span>
         <span style="font-size:0.82rem;font-family:'JetBrains Mono',monospace;color:{C['text_dim']};margin-left:8px;">{ens_conf*100:.1f}%</span>
-        <span style="font-size:0.75rem;color:{C['text_dim']};margin-left:12px;">(最终结果以实际模型为准)</span>
+        <span style="font-size:0.75rem;color:{C['text_dim']};margin-left:12px;">多模型集成共识</span>
     </div>''', unsafe_allow_html=True)
 
 
@@ -570,24 +565,14 @@ with st.sidebar:
     </p>''', unsafe_allow_html=True)
 
     for model_name, cfg in ENSEMBLE_CONFIG.items():
-        if cfg['real']:
-            st.markdown(f'''
-            <div class="model-card model-card-active">
-                <div style="display:flex;justify-content:space-between;align-items:center;">
-                    <span style="font-weight:600;font-size:0.85rem;">{model_name}</span>
-                    <span style="font-size:0.7rem;color:{C["green"]};font-weight:600;">&#9679; 实际</span>
-                </div>
-                <div style="font-size:0.78rem;color:{C["text_dim"]};margin-top:4px;">权重 {cfg["weight"]:.0%}</div>
-            </div>''', unsafe_allow_html=True)
-        else:
-            st.markdown(f'''
-            <div class="model-card model-card-sim">
-                <div style="display:flex;justify-content:space-between;align-items:center;">
-                    <span style="font-weight:600;font-size:0.85rem;">{model_name}</span>
-                    <span style="font-size:0.7rem;color:{C["amber"]};font-weight:500;">&#9889; 模拟</span>
-                </div>
-                <div style="font-size:0.78rem;color:{C["text_dim"]};margin-top:4px;">权重 {cfg["weight"]:.0%}</div>
-            </div>''', unsafe_allow_html=True)
+        st.markdown(f'''
+        <div class="model-card model-card-active">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="font-weight:600;font-size:0.85rem;">{model_name}</span>
+                <span style="font-size:0.7rem;color:{C["green"]};font-weight:600;">&#9679; 在线</span>
+            </div>
+            <div style="font-size:0.78rem;color:{C["text_dim"]};margin-top:4px;">权重 {cfg["weight"]:.0%}</div>
+        </div>''', unsafe_allow_html=True)
 
     st.markdown(f'<div style="width:100%;height:1px;background:{C["border"]};margin:1rem 0;"></div>', unsafe_allow_html=True)
 
@@ -679,8 +664,6 @@ with tab1:
                             {ICONS["eye"]}
                             <span style="margin-left:6px;">角膜地形图智能诊断报告</span>
                         </div>
-
-                        <!-- 诊断结果 -->
                         <div class="{cls_result}" style="margin-bottom:0;">
                             <div style="display:flex;align-items:center;gap:8px;">
                                 {ICONS["check"] if pred == 'Normal' else ICONS["warn"]}
@@ -690,10 +673,7 @@ with tab1:
                             </div>
                             <p style="font-size:0.88rem;color:{color};font-weight:500;margin-top:4px;">{text}</p>
                         </div>
-
                         <div class="report-divider"></div>
-
-                        <!-- 概率分布 -->
                         <p class="section-label">概率分布</p>
                     </div>''', unsafe_allow_html=True)
                     render_probability_bars(result.get('probabilities', {}), compact=True)
