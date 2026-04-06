@@ -44,10 +44,10 @@ class RiskAssessmentReport:
     }
 
     PROGRESSION_RISK = {
-        'Normal': {'level': '极低', 'description': '角膜形态稳定，无明显进展风险'},
-        'Mild KC': {'level': '中等', 'description': '有进展可能，建议定期随访观察'},
-        'Moderate KC': {'level': '较高', 'description': '进展风险较高，需积极干预'},
-        'Severe KC': {'level': '高', 'description': '疾病处于活动期，进展风险高'},
+        'Normal': {'level': '极低', 'percentage': '< 5%', 'description': '角膜形态稳定，无明显进展风险'},
+        'Mild KC': {'level': '中等', 'percentage': '30-50%', 'description': '有进展可能，建议定期随访观察'},
+        'Moderate KC': {'level': '较高', 'percentage': '60-80%', 'description': '进展风险较高，需积极干预'},
+        'Severe KC': {'level': '高', 'percentage': '> 80%', 'description': '疾病处于活动期，进展风险高'},
     }
 
     FOLLOW_UP_INTERVAL = {
@@ -59,32 +59,32 @@ class RiskAssessmentReport:
 
     CLINICAL_RECOMMENDATIONS = {
         'Normal': [
-            '可进行近视激光手术术前检查',
-            '建议完善角膜厚度和地形图分析',
-            '术后定期复查角膜形态',
-            '注意用眼卫生，避免揉眼',
+            {'text': '可进行近视激光手术术前检查', 'type': 'recommend', 'star_rating': 4},
+            {'text': '建议完善角膜厚度和地形图分析', 'type': 'recommend', 'star_rating': 3},
+            {'text': '术后定期复查角膜形态', 'type': 'followup', 'star_rating': 0},
+            {'text': '注意用眼卫生，避免揉眼', 'type': 'notice', 'star_rating': 0},
         ],
         'Mild KC': [
-            '建议行角膜生物力学检查（Corvis ST）',
-            '完善Pentacam眼前节全面分析',
-            '考虑角膜交联术（CXL）控制疾病进展',
-            '术后密切随访，每3-6个月复查角膜地形图',
-            '避免揉眼，注意用眼卫生',
+            {'text': '建议行角膜生物力学检查（Corvis ST）', 'type': 'recommend', 'star_rating': 4},
+            {'text': '完善Pentacam眼前节全面分析', 'type': 'recommend', 'star_rating': 3},
+            {'text': '考虑角膜交联术（CXL）控制疾病进展', 'type': 'recommend', 'star_rating': 4},
+            {'text': '每3-6个月复查角膜地形图', 'type': 'followup', 'star_rating': 0},
+            {'text': '避免揉眼，注意用眼卫生', 'type': 'notice', 'star_rating': 0},
         ],
         'Moderate KC': [
-            '不建议进行近视激光手术',
-            '建议行角膜交联术（CXL）控制进展',
-            '必要时佩戴RGP角膜接触镜矫正视力',
-            '加强随访频率，每1-3个月复查',
-            '避免剧烈运动和眼部碰撞',
+            {'text': '近视激光手术 - 禁忌', 'type': 'contraindication', 'star_rating': 0},
+            {'text': '建议行角膜交联术（CXL）控制进展', 'type': 'recommend', 'star_rating': 4},
+            {'text': '必要时佩戴RGP角膜接触镜矫正视力', 'type': 'recommend', 'star_rating': 3},
+            {'text': '加强随访频率，每1-3个月复查', 'type': 'followup', 'star_rating': 0},
+            {'text': '避免剧烈运动和眼部碰撞', 'type': 'notice', 'star_rating': 0},
         ],
         'Severe KC': [
-            '绝对禁忌近视激光手术',
-            '建议角膜交联术控制病情',
-            '考虑深板层角膜移植或穿透性角膜移植',
-            '佩戴RGP或巩膜镜改善视力',
-            '加强随访频率，每月复查',
-            '必要时转诊角膜病专科',
+            {'text': '近视激光手术 - 绝对禁忌', 'type': 'contraindication', 'star_rating': 0},
+            {'text': '建议角膜交联术控制病情', 'type': 'recommend', 'star_rating': 4},
+            {'text': '考虑深板层角膜移植或穿透性角膜移植', 'type': 'recommend', 'star_rating': 4},
+            {'text': '佩戴RGP或巩膜镜改善视力', 'type': 'recommend', 'star_rating': 3},
+            {'text': '加强随访频率，每月复查', 'type': 'followup', 'star_rating': 0},
+            {'text': '必要时转诊角膜病专科', 'type': 'recommend', 'star_rating': 3},
         ],
     }
 
@@ -117,6 +117,13 @@ class RiskAssessmentReport:
         progression = self.PROGRESSION_RISK.get(prediction, self.PROGRESSION_RISK['Moderate KC'])
         follow_up = self.FOLLOW_UP_INTERVAL.get(prediction, self.FOLLOW_UP_INTERVAL['Moderate KC'])
         recommendations = self.CLINICAL_RECOMMENDATIONS.get(prediction, self.CLINICAL_RECOMMENDATIONS['Moderate KC'])
+        # 兼容旧格式（字符串列表）和新格式（字典列表）
+        recs_list = []
+        for rec in recommendations:
+            if isinstance(rec, dict):
+                recs_list.append(rec)
+            else:
+                recs_list.append({'text': rec, 'type': 'recommend', 'star_rating': 0})
 
         report = {
             'report_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -145,7 +152,7 @@ class RiskAssessmentReport:
                     'description': follow_up['description'],
                 },
             },
-            'clinical_recommendations': recommendations,
+            'clinical_recommendations': recs_list,
         }
 
         # 添加可解释性分析结果
@@ -242,7 +249,18 @@ class RiskAssessmentReport:
         lines.append("")
         lines.append("【临床建议】")
         for i, rec in enumerate(report['clinical_recommendations'], 1):
-            lines.append(f"  {i}. {rec}")
+            text = rec['text'] if isinstance(rec, dict) else rec
+            rec_type = rec.get('type', 'recommend') if isinstance(rec, dict) else 'recommend'
+            if rec_type == 'contraindication':
+                lines.append(f"  ✗ {text}")
+            elif rec_type == 'recommend':
+                star = rec.get('star_rating', 0) if isinstance(rec, dict) else 0
+                star_str = f" - 推荐指数{'★' * star}{'☆' * (4 - star)}" if star > 0 else ""
+                lines.append(f"  ✓ {text}{star_str}")
+            elif rec_type == 'followup':
+                lines.append(f"  ◎ {text}")
+            else:
+                lines.append(f"  • {text}")
 
         # 免责声明
         lines.append("")

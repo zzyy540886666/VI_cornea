@@ -194,7 +194,6 @@ python -c "import timm; print(f'timm {timm.__version__}')"
 - [ ] `import timm` 不报错
 
 ---
-
 ## 三、数据准备
 
 ### 3.1 数据目录结构
