@@ -224,7 +224,21 @@ class ModelService:
                 probabilities = torch.nn.functional.softmax(outputs, dim=1)
                 confidence, predicted = torch.max(probabilities, 1)
 
-            pred_idx = predicted.item()
+            pred_idx = int(predicted.item())
+
+            # ── 诊断日志：输出原始 logits 和概率，用于验证类别映射正确性 ──
+            raw_logits = outputs[0].cpu().tolist()
+            raw_probs = probabilities[0].cpu().tolist()
+            logger.info(f"=== 模型输出诊断 (num_classes={self.num_classes}) ===")
+            logger.info(f"  raw logits:    {[round(x, 4) for x in raw_logits]}")
+            logger.info(f"  softmax probs: {[round(x, 4) for x in raw_probs]}")
+            logger.info(f"  argmax idx:    {pred_idx} (confidence={float(confidence.item()):.2%})")
+            for i in range(self.num_classes):
+                logger.info(f"    logits[{i}]= {raw_logits[i]:+.4f}  →  prob[{i}]= {raw_probs[i]:.4f}")
+            logger.info(f"  idx_to_class: {self.idx_to_class}")
+            logger.info(f"  映射结果:     idx {pred_idx} → '{self.idx_to_class.get(pred_idx, '???')}'")
+            logger.info(f"=============================================")
+
             pred_class = self.idx_to_class[pred_idx]
             pred_config = self.class_config[pred_class]
 
